@@ -17,6 +17,7 @@ use ReflectionClass;
 class Dispatcher implements DispatcherContract
 {
     use Macroable;
+    use HandlesTransactions;
 
     /**
      * The IoC container instance.
@@ -62,6 +63,8 @@ class Dispatcher implements DispatcherContract
     public function __construct(ContainerContract $container = null)
     {
         $this->container = $container ?: new Container;
+
+        $this->setupDatabaseListeners();
     }
 
     /**
@@ -192,7 +195,7 @@ class Dispatcher implements DispatcherContract
     }
 
     /**
-     * Fire an event and call the listeners.
+     * Fire an event and call the listeners, respect transactional events
      *
      * @param  string|object  $event
      * @param  mixed  $payload
@@ -200,6 +203,25 @@ class Dispatcher implements DispatcherContract
      * @return array|null
      */
     public function dispatch($event, $payload = [], $halt = false)
+    {
+        if (!$halt && $this->isTransactionalEvent($event)) {
+            $this->addPendingEvent($event, $payload);
+
+            return null;
+        }
+
+        return $this->dispatchEvent($event, $payload, $halt);
+    }
+
+    /**
+     * Fire an event and call the listeners.
+     *
+     * @param  string|object  $event
+     * @param  mixed  $payload
+     * @param  bool  $halt
+     * @return array|null
+     */
+    protected function dispatchEvent($event, $payload = [], $halt = false)
     {
         // When the given "event" is actually an object we will assume it is an event
         // object and use the class as the event name and this event itself as the
